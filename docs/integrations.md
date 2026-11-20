@@ -120,7 +120,8 @@ The post is found among the account's 50 most recent posts by shortcode, so `/p/
 slash all match. The link goes as a tracked "Abrir link" button; there is no opening
 DM and no follow gate. `externalRef` is stored in `goal`: a second request with the
 same value returns the existing campaign (`200`, `created: false`) instead of
-creating another. With more than one connected account, `instagramAccountId` is
+creating another; a Redis lock per `externalRef` (60 s) makes a concurrent retry
+answer `409 Campaign creation already in progress` instead of racing. With more than one connected account, `instagramAccountId` is
 required. Errors: `Invalid post URL` / `Invalid campaign input` (400),
 `Choose an Instagram account` (400), `Connect Instagram before creating campaigns`
 (400), `Post not found on the connected account` (422).

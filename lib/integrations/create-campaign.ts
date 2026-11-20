@@ -4,7 +4,7 @@ import { buildInitialCampaignLinks } from "@/lib/campaigns/links";
 import { createInstagramContext, getUserMedia } from "@/lib/instagram/provider";
 import { generateReportShareSlug } from "@/lib/reports/share";
 import { ApiError } from "./http";
-import { requireScope, type ServiceContext } from "./auth";
+import { requireScope, withServiceLock, type ServiceContext } from "./auth";
 import { shortcodeFromUrl } from "./post-link";
 
 // Button title for the tracked link; the campaigns created this way are for a
@@ -41,7 +41,13 @@ export async function createCampaign(context: ServiceContext, raw: unknown) {
   }
   const input = parsed.data;
   const { workspaceId } = context;
+  // The lookup and the insert below straddle a Meta call; the lock keeps a
+  // retry from slipping between them and creating a second campaign.
+  return withServiceLock(`integration-create:${workspaceId}:${input.externalRef}`, 60,
+    "Campaign creation already in progress", () => createLocked(input, workspaceId));
+}
 
+async function createLocked(input: z.infer<typeof createCampaignSchema>, workspaceId: string) {
   const existing = await prisma.automation.findFirst({ where: { workspaceId, goal: input.externalRef }, select: resultSelect });
   if (existing) return { created: false, campaign: existing };
 

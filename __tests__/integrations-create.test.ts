@@ -4,11 +4,11 @@ const state = vi.hoisted(() => ({
   keys: { findUnique: vi.fn(), update: vi.fn() },
   campaigns: { findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
   accounts: { findMany: vi.fn() },
-  media: vi.fn(), context: vi.fn(), eval: vi.fn(),
+  media: vi.fn(), context: vi.fn(), eval: vi.fn(), set: vi.fn(), del: vi.fn(),
 }));
 vi.mock("@/lib/db/client", () => ({ prisma: { serviceKey: state.keys, automation: state.campaigns, instagramAccount: state.accounts } }));
 vi.mock("@/lib/instagram/provider", () => ({ getUserMedia: state.media, createInstagramContext: state.context }));
-vi.mock("ioredis", () => ({ default: class { status = "ready"; eval = state.eval; listenerCount() { return 1; } } }));
+vi.mock("ioredis", () => ({ default: class { status = "ready"; eval = state.eval; set = state.set; del = state.del; listenerCount() { return 1; } } }));
 
 import { shortcodeFromUrl } from "../lib/integrations/post-link";
 import { PATCH, POST } from "../app/api/v1/campaigns/route";
@@ -33,6 +33,8 @@ beforeEach(() => {
   state.keys.findUnique.mockResolvedValue(writeKey);
   state.keys.update.mockResolvedValue(writeKey);
   state.eval.mockResolvedValue(1);
+  state.set.mockResolvedValue("OK");
+  state.del.mockResolvedValue(1);
   state.campaigns.findFirst.mockResolvedValue(null);
   state.campaigns.create.mockImplementation(async ({ data }) => ({ id: "c1", name: data.name, isActive: data.isActive, postId: data.postId, postUrl: data.postUrl }));
   state.campaigns.updateMany.mockResolvedValue({ count: 1 });
@@ -83,6 +85,21 @@ describe("create campaign", () => {
     expect(state.campaigns.findFirst.mock.calls[0][0].where).toEqual({ workspaceId: "workspace", goal: "davinci:post-7" });
     expect(state.campaigns.create).not.toHaveBeenCalled();
     expect(state.media).not.toHaveBeenCalled();
+  });
+  it("holds a per-ref lock so a concurrent retry cannot create a second campaign", async () => {
+    state.set.mockResolvedValueOnce(null);
+    const busy = await call("POST", body);
+    expect(busy.status).toBe(409);
+    expect((await busy.json()).error).toBe("Campaign creation already in progress");
+    expect(state.campaigns.create).not.toHaveBeenCalled();
+    expect(await (await call("POST", body)).status).toBe(201);
+    expect(state.set).toHaveBeenLastCalledWith("integration-create:workspace:davinci:post-7", expect.any(String), "EX", 60, "NX");
+    expect(state.del).toHaveBeenCalledWith("integration-create:workspace:davinci:post-7");
+  });
+  it("releases the lock when creation fails", async () => {
+    state.media.mockRejectedValueOnce(new Error("meta down"));
+    expect((await call("POST", body)).status).toBe(500);
+    expect(state.del).toHaveBeenCalledTimes(1);
   });
   it("rejects a post that is not on the account", async () => {
     state.media.mockResolvedValue([{ id: "other", permalink: "https://www.instagram.com/p/OUTRO/" }]);

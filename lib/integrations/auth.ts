@@ -25,6 +25,23 @@ async function limiter() {
   return redis;
 }
 
+/**
+ * Runs `fn` while holding a short Redis lock, so two requests for the same key
+ * never run it at the same time (for example, a retry after a client timeout).
+ * Fails closed like the rate limiter: no Redis, no write.
+ */
+export async function withServiceLock<T>(key: string, ttlSeconds: number, busyMessage: string, fn: () => Promise<T>): Promise<T> {
+  let client: Redis;
+  let acquired: unknown;
+  try {
+    client = await limiter();
+    acquired = await client.set(key, randomBytes(8).toString("hex"), "EX", ttlSeconds, "NX");
+  } catch { throw new ApiError("Integration lock unavailable", 503); }
+  if (acquired !== "OK") throw new ApiError(busyMessage, 409);
+  try { return await fn(); }
+  finally { await client.del(key).catch(() => undefined); }
+}
+
 export function requireScope(context: ServiceContext, scope: ServiceScope) {
   if (!context.scopes.includes(scope)) throw new ApiError(`Missing scope: ${scope}`, 403);
 }
