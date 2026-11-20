@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { authenticateService } from "@/lib/integrations/auth";
 import { getCampaign, getCampaignLogs, getCampaignStats, listCampaigns } from "@/lib/integrations/campaigns";
-import { apiError, ApiError, checkOrigin } from "@/lib/integrations/http";
+import { createCampaign } from "@/lib/integrations/create-campaign";
+import { apiError, ApiError, checkOrigin, readJson } from "@/lib/integrations/http";
 
 function parseSince(raw: string | null): Date | undefined {
   if (raw === null) return undefined;
@@ -25,5 +26,14 @@ export async function GET(request: Request) {
       : url.searchParams.has("stats") ? await getCampaignStats(context, id, since)
       : await getCampaign(context, id);
     return Response.json({ data }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) { return apiError(error); }
+}
+
+export async function POST(request: Request) {
+  try {
+    checkOrigin(request);
+    const context = await authenticateService(request);
+    const { created, campaign } = await createCampaign(context, await readJson(request));
+    return Response.json({ data: { ...campaign, created } }, { status: created ? 201 : 200, headers: { "Cache-Control": "no-store" } });
   } catch (error) { return apiError(error); }
 }

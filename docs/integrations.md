@@ -104,3 +104,26 @@ npx tsx scripts/verify-readonly-integrations.ts
 The script refuses non-loopback URLs, creates dummy fixtures and keys, and
 removes its test user/workspace in `finally`. It must never run against a real
 deployment, including one tunneled through localhost. No Meta messages are sent.
+
+## Creating campaigns (`campaigns:write`)
+
+`POST /api/v1/campaigns` creates an **active** campaign bound to one published post:
+
+```json
+{ "name": "...", "postUrl": "https://www.instagram.com/p/<shortcode>/",
+  "keywords": ["WORD"], "dmMessage": "...", "destinationUrl": "https://...",
+  "publicReply": "optional", "instagramAccountId": "optional", "externalRef": "davinci:post-<id>" }
+```
+
+The post is found among the account's 50 most recent posts by shortcode, so `/p/`,
+`/reel/`, `/reels/`, `/tv/`, a username prefix, a query string or a missing trailing
+slash all match. The link goes as a tracked "Abrir link" button; there is no opening
+DM and no follow gate. `externalRef` is stored in `goal`: a second request with the
+same value returns the existing campaign (`200`, `created: false`) instead of
+creating another. With more than one connected account, `instagramAccountId` is
+required. Errors: `Invalid post URL` / `Invalid campaign input` (400),
+`Choose an Instagram account` (400), `Connect Instagram before creating campaigns`
+(400), `Post not found on the connected account` (422).
+
+The comment sweep also answers matching comments made before the campaign existed,
+within `COMMENT_POLL_LOOKBACK_HOURS`.
