@@ -86,3 +86,11 @@ export async function getCampaignStats(context: ServiceContext, id: string, sinc
   ]);
   return { campaignId: id, statuses, rawClicks, note: "Raw link requests include previews and repeated clicks; not unique recipients." };
 }
+
+/** Pause or resume one campaign of the key's workspace; nothing else changes. */
+export async function setCampaignActive(context: ServiceContext, id: string, isActive: boolean) {
+  requireScope(context, "campaigns:write");
+  const result = await prisma.automation.updateMany({ where: { id, workspaceId: context.workspaceId }, data: { isActive } });
+  if (!result.count) throw new ApiError("Campaign not found", 404);
+  return { id, isActive };
+}

@@ -127,3 +127,7 @@ required. Errors: `Invalid post URL` / `Invalid campaign input` (400),
 
 The comment sweep also answers matching comments made before the campaign existed,
 within `COMMENT_POLL_LOOKBACK_HOURS`.
+
+`PATCH /api/v1/campaigns?id=<campaign-id>` with exactly `{ "isActive": true | false }`
+pauses or resumes a campaign of the key's workspace (`campaigns:write`); any other
+field is rejected with 400, and a foreign campaign returns 404.
