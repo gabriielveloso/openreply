@@ -1,7 +1,14 @@
 import { z } from "zod";
 import { authenticateService } from "@/lib/integrations/auth";
-import { getCampaign, getCampaignStats, listCampaigns } from "@/lib/integrations/campaigns";
+import { getCampaign, getCampaignLogs, getCampaignStats, listCampaigns } from "@/lib/integrations/campaigns";
 import { apiError, ApiError, checkOrigin } from "@/lib/integrations/http";
+
+function parseSince(raw: string | null): Date | undefined {
+  if (raw === null) return undefined;
+  const since = new Date(raw);
+  if (!/^\d{4}-\d{2}-\d{2}/.test(raw) || Number.isNaN(since.getTime())) throw new ApiError("Invalid since");
+  return since;
+}
 
 export async function GET(request: Request) {
   try {
@@ -11,7 +18,12 @@ export async function GET(request: Request) {
     const id = url.searchParams.get("id");
     if (id !== null && !z.string().min(1).max(100).safeParse(id).success) throw new ApiError("Invalid campaign id");
     if (url.searchParams.has("stats") && !id) throw new ApiError("Campaign id required for stats");
-    const data = id ? url.searchParams.has("stats") ? await getCampaignStats(context, id) : await getCampaign(context, id) : await listCampaigns(context);
+    if (url.searchParams.has("logs") && !id) throw new ApiError("Campaign id required for logs");
+    const since = parseSince(url.searchParams.get("since"));
+    const data = !id ? await listCampaigns(context)
+      : url.searchParams.has("logs") ? await getCampaignLogs(context, id)
+      : url.searchParams.has("stats") ? await getCampaignStats(context, id, since)
+      : await getCampaign(context, id);
     return Response.json({ data }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return apiError(error); }
 }

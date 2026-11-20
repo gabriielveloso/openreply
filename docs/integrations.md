@@ -58,8 +58,17 @@ Use the same Bearer header:
 GET /api/v1/campaigns
 GET /api/v1/campaigns?id=<campaign-id>
 GET /api/v1/campaigns?id=<campaign-id>&stats=1
+GET /api/v1/campaigns?id=<campaign-id>&stats=1&since=<ISO date>
+GET /api/v1/campaigns?id=<campaign-id>&logs=1
 GET /api/v1/key
 ```
+
+The list carries each campaign's all-time `totals` (`sent`, `failed`, `skipped`
+for every `SKIPPED_*` status, and raw `clicks`), computed with one grouped query
+per table for the whole page. `stats` accepts `since` to count only sends and
+clicks created from that moment. `logs` (scope `logs:read`) returns the last 50
+sends of one campaign: `id`, `commenterName`, `commentText`, `status`,
+`errorMessage` (first 200 characters), `createdAt` and `dmSentAt`; no recipient ids.
 
 `GET /api/v1/key` returns the calling key's own `name`, `scopes` and `expiresAt`
 (any valid key, no scope required), so a client can warn before the key expires.

@@ -3,15 +3,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   keys: { findUnique: vi.fn(), update: vi.fn(), create: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
   campaigns: { findFirst: vi.fn(), findMany: vi.fn() },
+  dmLogs: { groupBy: vi.fn(), findMany: vi.fn() },
+  clicks: { groupBy: vi.fn(), count: vi.fn() },
   context: vi.fn(), eval: vi.fn(),
 }));
-vi.mock("@/lib/db/client", () => ({ prisma: { serviceKey: state.keys, automation: state.campaigns } }));
+vi.mock("@/lib/db/client", () => ({ prisma: { serviceKey: state.keys, automation: state.campaigns, dmLog: state.dmLogs, linkClick: state.clicks } }));
 vi.mock("@/lib/workspace-access", () => ({ getCurrentWorkspaceContext: state.context, canManageWorkspace: (role: string) => ["OWNER", "ADMIN"].includes(role) }));
 vi.mock("ioredis", () => ({ default: class { status = "ready"; eval = state.eval; listenerCount() { return 1; } } }));
 
 import { authenticateService, hashServiceToken, newServiceToken } from "../lib/integrations/auth";
 import { checkOrigin, readJson } from "../lib/integrations/http";
-import { getCampaign } from "../lib/integrations/campaigns";
+import { getCampaign, listCampaigns } from "../lib/integrations/campaigns";
 import { callTool, listTools } from "../lib/integrations/mcp";
 import { GET as listKeys, POST as createKey, DELETE as revokeKey } from "../app/api/integrations/keys/route";
 import { POST as mcp } from "../app/api/mcp/route";
@@ -163,6 +165,54 @@ describe("read-only MCP and REST", () => {
     await expect(getCampaign(context, "foreign")).rejects.toMatchObject({ status: 404 });
     state.campaigns.findFirst.mockResolvedValue({ id: "empty", trackedLinks: [] });
     expect(await getCampaign(context, "empty")).toMatchObject({ trackedDestinationUrl: null, secondaryDestinationUrl: null, trackedLinks: [] });
+  });
+});
+
+describe("dashboard reads", () => {
+  const restGet = (query: string, scopes = ["campaigns:read"]) => {
+    state.keys.findUnique.mockResolvedValue({ ...key, scopes });
+    return rest(new Request(`https://example.test/api/v1/campaigns${query}`, { headers }));
+  };
+  it("list includes totals from two grouped queries", async () => {
+    state.campaigns.findMany.mockResolvedValue([{ id: "c1" }, { id: "c2" }]);
+    state.dmLogs.groupBy.mockResolvedValue([
+      { automationId: "c1", status: "SENT", _count: { _all: 3 } },
+      { automationId: "c1", status: "FAILED", _count: { _all: 1 } },
+      { automationId: "c1", status: "SKIPPED_DEDUP", _count: { _all: 2 } },
+      { automationId: "c1", status: "PENDING", _count: { _all: 4 } },
+    ]);
+    state.clicks.groupBy.mockResolvedValue([{ automationId: "c1", _count: { _all: 5 } }]);
+    const list = await listCampaigns(context);
+    expect(list[0].totals).toEqual({ sent: 3, failed: 1, skipped: 2, clicks: 5 });
+    expect(list[1].totals).toEqual({ sent: 0, failed: 0, skipped: 0, clicks: 0 });
+    expect(state.dmLogs.groupBy).toHaveBeenCalledTimes(1);
+    expect(state.clicks.groupBy).toHaveBeenCalledTimes(1);
+    expect(state.dmLogs.groupBy.mock.calls[0][0].where).toEqual({ workspaceId: "workspace", automationId: { in: ["c1", "c2"] } });
+  });
+  it("stats accepts since and rejects garbage", async () => {
+    state.campaigns.findFirst.mockResolvedValue({ id: "c1", trackedLinks: [] });
+    state.dmLogs.groupBy.mockResolvedValue([]);
+    state.clicks.count.mockResolvedValue(0);
+    expect((await restGet("?id=c1&stats=1&since=2026-11-19T00:00:00Z")).status).toBe(200);
+    const since = new Date("2026-11-19T00:00:00Z");
+    expect(state.dmLogs.groupBy.mock.calls[0][0].where.createdAt).toEqual({ gte: since });
+    expect(state.clicks.count.mock.calls[0][0].where.createdAt).toEqual({ gte: since });
+    expect((await restGet("?id=c1&stats=1&since=ontem")).status).toBe(400);
+  });
+  it("logs require logs:read", async () => {
+    state.campaigns.findFirst.mockResolvedValue({ id: "c1" });
+    expect((await restGet("?id=c1&logs=1")).status).toBe(403);
+    state.dmLogs.findMany.mockResolvedValue([{ id: "l1", commenterName: "ana", commentText: "TESTE", status: "FAILED", errorMessage: "x".repeat(500), createdAt: new Date(0), dmSentAt: null }]);
+    const response = await restGet("?id=c1&logs=1", ["campaigns:read", "logs:read"]);
+    expect(response.status).toBe(200);
+    const { data } = await response.json();
+    expect(data[0].errorMessage).toHaveLength(200);
+    const query = state.dmLogs.findMany.mock.calls[0][0];
+    expect(query.take).toBe(50);
+    expect(query.where).toEqual({ workspaceId: "workspace", automationId: "c1" });
+    expect(query.select.commenterId).toBeUndefined();
+    state.campaigns.findFirst.mockResolvedValue(null);
+    expect((await restGet("?id=foreign&logs=1", ["campaigns:read", "logs:read"])).status).toBe(404);
   });
 });
 
