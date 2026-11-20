@@ -1,4 +1,4 @@
-# Read-only API and MCP
+# API and MCP
 
 Workspace owners and admins can create keys at **API & MCP** (`/integrations`).
 The UI offers 30, 60 or 90 days (default: 30). The API accepts whole days from
@@ -33,6 +33,10 @@ In Claude, use **No authentication** plus this custom request header **only if
 your client offers request headers**. Clients requiring OAuth are not supported.
 Never switch to public access to work around a client limitation.
 
+Scopes: `campaigns:read` (list, details, stats), `campaigns:write` (create a campaign
+bound to a post, pause and resume) and `logs:read` (recent sends). The **API & MCP**
+screen creates keys with all three. The MCP tools stay read-only.
+
 Tools (all read-only; scope `campaigns:read`):
 
 - `list_campaigns`: up to 100 compact campaign summaries, newest first.
@@ -54,7 +58,11 @@ Use the same Bearer header:
 GET /api/v1/campaigns
 GET /api/v1/campaigns?id=<campaign-id>
 GET /api/v1/campaigns?id=<campaign-id>&stats=1
+GET /api/v1/key
 ```
+
+`GET /api/v1/key` returns the calling key's own `name`, `scopes` and `expiresAt`
+(any valid key, no scope required), so a client can warn before the key expires.
 
 Responses use `{ "data": ... }`. Lists are capped at 100; pagination is not yet
 provided. Detail responses use an explicit safe projection: no provider tokens,

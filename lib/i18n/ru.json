@@ -105,6 +105,7 @@
   "Create Campaign": "Создать кампанию",
   "Create a profile in Zernio, then refresh this page.": "Создайте профиль в Zernio и обновите эту страницу.",
   "Create a read-only workspace key for {days} days? Anyone with this key can read your campaigns.": "Создать ключ рабочего пространства только для чтения на {days} дн.? Любой, у кого есть этот ключ, сможет читать ваши кампании.",
+  "Create a workspace key for {days} days? Anyone with this key can read your campaigns and their recent sends, and create, pause or resume campaigns.": "Создать ключ рабочего пространства на {days} дн.? Любой, у кого есть этот ключ, может читать ваши кампании и недавние отправки, а также создавать, приостанавливать и возобновлять кампании.",
   "Create key for {days} days": "Создать ключ на {days} дн.",
   "Create your first comment-to-DM campaign to turn a post or reel into a measurable conversation flow.": "Создайте первую кампанию «комментарий → директ», чтобы превратить пост или Reels в измеримую воронку.",
   "Created": "Создана",

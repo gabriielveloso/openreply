@@ -16,9 +16,10 @@ import { callTool, listTools } from "../lib/integrations/mcp";
 import { GET as listKeys, POST as createKey, DELETE as revokeKey } from "../app/api/integrations/keys/route";
 import { POST as mcp } from "../app/api/mcp/route";
 import { GET as rest } from "../app/api/v1/campaigns/route";
+import { GET as keyInfo } from "../app/api/v1/key/route";
 
 const token = `orp_${"a".repeat(43)}`;
-const key = { id: "key", workspaceId: "workspace", scopes: ["campaigns:read"], expiresAt: new Date("2099-01-01"), revokedAt: null };
+const key = { id: "key", name: "Reader", tokenHash: "hash", workspaceId: "workspace", scopes: ["campaigns:read"], expiresAt: new Date("2099-01-01"), revokedAt: null };
 const context = { workspaceId: "workspace", keyId: "key", scopes: ["campaigns:read"] };
 const headers = { authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json, text/event-stream" };
 const request = (body: unknown, extra = {}) => new Request("https://example.test/api/mcp", { method: "POST", headers: { ...headers, ...extra }, body: JSON.stringify(body) });
@@ -93,6 +94,22 @@ describe("key management", () => {
     expect((await listKeys()).status).toBe(403);
     expect((await createKey(request({}))).status).toBe(403);
     expect((await revokeKey(new Request("https://example.test/api/integrations/keys?id=key"))).status).toBe(403);
+  });
+  it("creates a key with all three scopes", async () => {
+    const scopes = ["campaigns:read", "campaigns:write", "logs:read"];
+    expect((await createKey(request({ name: "Da Vinci", scopes, days: 90 }))).status).toBe(201);
+    expect(state.keys.create.mock.calls[0][0].data.scopes).toEqual(scopes);
+  });
+  it("rejects unknown scopes", async () => {
+    expect((await createKey(request({ name: "Da Vinci", scopes: ["campaigns:delete"] }))).status).toBe(400);
+    expect(state.keys.create).not.toHaveBeenCalled();
+  });
+  it("GET /api/v1/key returns the key's own name, scopes and expiry", async () => {
+    const response = await keyInfo(new Request("https://example.test/api/v1/key", { headers }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const { data } = await response.json();
+    expect(data).toEqual({ name: "Reader", scopes: ["campaigns:read"], expiresAt: "2099-01-01T00:00:00.000Z" });
   });
   it("rejects write scopes and foreign Origins", async () => {
     expect((await createKey(request({ name: "Reader", scopes: ["drafts:write"] }))).status).toBe(400);

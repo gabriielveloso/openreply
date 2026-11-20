@@ -105,6 +105,7 @@
   "Create Campaign": "Criar campanha",
   "Create a profile in Zernio, then refresh this page.": "Crie um perfil no Zernio e depois atualize esta página.",
   "Create a read-only workspace key for {days} days? Anyone with this key can read your campaigns.": "Criar uma chave somente leitura do espaço de trabalho por {days} dias? Qualquer pessoa com esta chave poderá ler suas campanhas.",
+  "Create a workspace key for {days} days? Anyone with this key can read your campaigns and their recent sends, and create, pause or resume campaigns.": "Criar uma chave do espaço de trabalho por {days} dias? Qualquer pessoa com esta chave pode ler suas campanhas e os envios recentes, e criar, pausar ou reativar campanhas.",
   "Create key for {days} days": "Criar chave por {days} dias",
   "Create your first comment-to-DM campaign to turn a post or reel into a measurable conversation flow.": "Crie sua primeira campanha comentário→DM para transformar uma publicação ou reel em um fluxo de conversa mensurável.",
   "Created": "Criada em",

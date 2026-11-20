@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n/provider";
 
-type Key = { id: string; name: string; expiresAt: string; revokedAt: string | null };
+type Key = { id: string; name: string; scopes: string[]; expiresAt: string; revokedAt: string | null };
 
 export default function IntegrationsPage() {
   const { t, locale } = useI18n();
@@ -24,12 +24,12 @@ export default function IntegrationsPage() {
   useEffect(() => { void Promise.resolve().then(load).catch(e => setNotice(e.message)); }, []);
 
   async function create() {
-    if (!window.confirm(t("Create a read-only workspace key for {days} days? Anyone with this key can read your campaigns.", { days }))) return;
+    if (!window.confirm(t("Create a workspace key for {days} days? Anyone with this key can read your campaigns and their recent sends, and create, pause or resume campaigns.", { days }))) return;
     setBusy(true); setToken(""); setNotice("");
     try {
       const response = await fetch("/api/integrations/keys", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, days, scopes: ["campaigns:read"] }),
+        body: JSON.stringify({ name, days, scopes: ["campaigns:read", "campaigns:write", "logs:read"] }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
@@ -71,7 +71,7 @@ export default function IntegrationsPage() {
     </section>
     <section className="space-y-3">{keys.map(key => <div key={key.id} className="rounded border border-border p-4">
       <strong>{key.name}</strong>
-      <p className="text-sm">campaigns:read · {t("Expires: {date}", { date: new Date(key.expiresAt).toLocaleDateString(locale) })}</p>
+      <p className="text-sm">{key.scopes.join(" · ")} · {t("Expires: {date}", { date: new Date(key.expiresAt).toLocaleDateString(locale) })}</p>
       {key.revokedAt ? <span>{t("Revoked")}</span> : <button disabled={busy} onClick={() => revoke(key)} className="text-red-500">{t("Revoke key")}</button>}
     </div>)}</section>
     <section className="space-y-2 text-sm">
