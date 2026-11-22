@@ -110,6 +110,17 @@ describe.skipIf(!databaseUrl)("leads pela chave de serviço, em PostgreSQL de ve
     await state.db.dmLog.deleteMany({});
   });
 
+  it("cursor recuado com id vazio inclui todos os envios daquele instante", async () => {
+    const at = new Date(Date.UTC(2026, 10, 5, 8, 0));
+    const before = await send({ commenterId: "r0", dmSentAt: new Date(at.getTime() - 1000) });
+    const same = [await send({ commenterId: "r1", dmSentAt: at }), await send({ commenterId: "r2", dmSentAt: at })];
+    const after = Buffer.from(`${at.toISOString()}|`).toString("base64url");
+    const ids = (await listLeadSends(context, { after })).items.map(i => i.id);
+    expect(ids).toEqual(same.map(s => s.id));
+    expect(ids).not.toContain(before.id);
+    await state.db.dmLog.deleteMany({});
+  });
+
   it("cursor inválido, limite e escopo", async () => {
     await expect(listLeadSends(context, { after: "lixo" })).rejects.toMatchObject({ status: 400, message: "Invalid cursor" });
     await expect(listLeadSends({ ...context, scopes: ["campaigns:read"] }, {})).rejects.toMatchObject({ status: 403 });
