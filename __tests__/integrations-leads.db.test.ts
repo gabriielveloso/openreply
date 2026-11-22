@@ -8,7 +8,8 @@ import { PrismaClient } from "../app/generated/prisma/client";
 
 const state = vi.hoisted(() => ({ db: undefined as unknown as import("../app/generated/prisma/client").PrismaClient }));
 vi.mock("@/lib/db/client", () => ({ get prisma() { return state.db; } }));
-import { listLeadSends } from "../lib/integrations/leads";
+import { listLeadSends, listNewClicks } from "../lib/integrations/leads";
+import { setCampaignLink } from "../lib/integrations/campaigns";
 import { hashRecipientId } from "../lib/tracking/server";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -122,5 +123,39 @@ describe.skipIf(!databaseUrl)("leads pela chave de serviço, em PostgreSQL de ve
     await send({ commenterId: "long", commentText: "x".repeat(800) });
     expect((await listLeadSends(context, {})).items[0].commentText).toHaveLength(500);
     await state.db.dmLog.deleteMany({});
+  });
+
+  it("cliques desde a data viram pares campanha/pessoa", async () => {
+    await state.db.trackedLink.upsert({ where: { id: "link_a" }, update: {}, create: { id: "link_a", workspaceId: "workspace", automationId: "campaign_a", slug: "a", destinationUrl: "https://a.test" } });
+    await state.db.trackedLink.create({ data: { id: "link_x", workspaceId: "other", automationId: "campaign_x", slug: "x", destinationUrl: "https://x.test" } });
+    await send({ commenterId: "n1", automationId: "campaign_a" });
+    await send({ commenterId: "n2", automationId: "campaign_a" });
+    await send({ commenterId: "n3", workspaceId: "other", automationId: "campaign_x" });
+    const since = new Date(Date.UTC(2026, 10, 10));
+    const click = (automationId: string, trackedLinkId: string, workspaceId: string, recipient: string, createdAt: Date) =>
+      state.db.linkClick.create({ data: { workspaceId, automationId, instagramAccountId: `account_${workspaceId}`, trackedLinkId, recipientHash: hashRecipientId(recipient), createdAt } });
+    await click("campaign_a", "link_a", "workspace", "n1", new Date(Date.UTC(2026, 10, 9)));
+    await click("campaign_a", "link_a", "workspace", "n2", new Date(Date.UTC(2026, 10, 11)));
+    await click("campaign_a", "link_a", "workspace", "desconhecido", new Date(Date.UTC(2026, 10, 11)));
+    await click("campaign_x", "link_x", "other", "n3", new Date(Date.UTC(2026, 10, 11)));
+    const result = await listNewClicks(context, since);
+    expect(result.items).toEqual([{ campaignId: "campaign_a", commenterId: "n2" }]);
+    expect(new Date(result.serverTime).getTime()).toBeGreaterThan(since.getTime());
+    await expect(listNewClicks({ ...context, scopes: [] }, since)).rejects.toMatchObject({ status: 403 });
+    await state.db.linkClick.deleteMany({});
+    await state.db.dmLog.deleteMany({});
+  });
+
+  it("troca o link principal da campanha", async () => {
+    const write = { ...context, scopes: ["campaigns:write"] };
+    await state.db.trackedLink.create({ data: { id: "link_b0", workspaceId: "workspace", automationId: "campaign_b", slug: "b0", destinationUrl: "https://old.test", position: 0 } });
+    await state.db.trackedLink.create({ data: { id: "link_b1", workspaceId: "workspace", automationId: "campaign_b", slug: "b1", destinationUrl: "https://second.test", position: 1 } });
+    expect(await setCampaignLink(write, "campaign_b", "https://funil.test/guia")).toEqual({ id: "campaign_b", destinationUrl: "https://funil.test/guia" });
+    const links = await state.db.trackedLink.findMany({ where: { automationId: "campaign_b" }, orderBy: { position: "asc" } });
+    expect(links.map(l => [l.slug, l.destinationUrl])).toEqual([["b0", "https://funil.test/guia"], ["b1", "https://second.test"]]);
+    await expect(setCampaignLink(write, "campaign_b", "http://inseguro.test")).rejects.toMatchObject({ status: 400 });
+    await expect(setCampaignLink(write, "campaign_x", "https://a.test")).rejects.toMatchObject({ status: 404 });
+    await expect(setCampaignLink(write, "campaign_a_sem_link", "https://a.test")).rejects.toMatchObject({ status: 404 });
+    await expect(setCampaignLink(context, "campaign_b", "https://a.test")).rejects.toMatchObject({ status: 403 });
   });
 });

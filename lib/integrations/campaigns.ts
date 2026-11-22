@@ -94,3 +94,17 @@ export async function setCampaignActive(context: ServiceContext, id: string, isA
   if (!result.count) throw new ApiError("Campaign not found", 404);
   return { id, isActive };
 }
+
+/** Points the campaign's main DM link (first by TRACKED_LINK_ORDER) somewhere else; links already sent follow it. */
+export async function setCampaignLink(context: ServiceContext, id: string, destinationUrl: string) {
+  requireScope(context, "campaigns:write");
+  let url: URL;
+  try { url = new URL(destinationUrl); } catch { throw new ApiError("Invalid destinationUrl"); }
+  if (url.protocol !== "https:" || destinationUrl.length > 2000) throw new ApiError("Invalid destinationUrl");
+  const link = await prisma.trackedLink.findFirst({
+    where: { automationId: id, workspaceId: context.workspaceId }, orderBy: TRACKED_LINK_ORDER, select: { id: true },
+  });
+  if (!link) throw new ApiError("Campaign not found", 404);
+  await prisma.trackedLink.update({ where: { id: link.id }, data: { destinationUrl } });
+  return { id, destinationUrl };
+}

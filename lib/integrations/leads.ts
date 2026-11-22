@@ -90,3 +90,33 @@ export async function listLeadSends(context: ServiceContext, opts: { after?: str
   }));
   return { items, nextCursor, serverTime };
 }
+
+/**
+ * People who clicked a DM link since `since` (click time), as (campaign, commenter) pairs. The click only stores
+ * hashRecipientId(commenterId), so the commenters of the clicked campaigns are hashed here to match.
+ */
+export async function listNewClicks(context: ServiceContext, since: Date) {
+  requireScope(context, "logs:read");
+  const serverTime = new Date().toISOString();
+  const clicks = await prisma.linkClick.findMany({
+    where: { workspaceId: context.workspaceId, createdAt: { gt: since }, recipientHash: { not: null } },
+    select: { automationId: true, recipientHash: true },
+  });
+  if (!clicks.length) return { items: [], serverTime };
+  const senders = await prisma.dmLog.findMany({
+    where: { workspaceId: context.workspaceId, status: "SENT", automationId: { in: [...new Set(clicks.map(c => c.automationId))] } },
+    distinct: ["automationId", "commenterId"],
+    select: { automationId: true, commenterId: true },
+  });
+  const byHash = new Map(senders.map(s => [`${s.automationId}|${hashRecipientId(s.commenterId)}`, s]));
+  const seen = new Set<string>();
+  const items: { campaignId: string; commenterId: string }[] = [];
+  for (const click of clicks) {
+    const sender = byHash.get(`${click.automationId}|${click.recipientHash}`);
+    const key = sender ? `${sender.automationId}|${sender.commenterId}` : "";
+    if (!sender || seen.has(key)) continue;
+    seen.add(key);
+    items.push({ campaignId: sender.automationId, commenterId: sender.commenterId });
+  }
+  return { items, serverTime };
+}

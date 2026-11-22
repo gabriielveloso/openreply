@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { authenticateService } from "@/lib/integrations/auth";
-import { getCampaign, getCampaignLogs, getCampaignStats, listCampaigns, setCampaignActive } from "@/lib/integrations/campaigns";
+import { getCampaign, getCampaignLogs, getCampaignStats, listCampaigns, setCampaignActive, setCampaignLink } from "@/lib/integrations/campaigns";
 import { createCampaign } from "@/lib/integrations/create-campaign";
 import { apiError, ApiError, checkOrigin, readJson } from "@/lib/integrations/http";
 
@@ -38,7 +38,10 @@ export async function POST(request: Request) {
   } catch (error) { return apiError(error); }
 }
 
-const activeSchema = z.object({ isActive: z.boolean() }).strict();
+const patchSchema = z.union([
+  z.object({ isActive: z.boolean() }).strict(),
+  z.object({ destinationUrl: z.string().min(1).max(2000) }).strict(),
+]);
 
 export async function PATCH(request: Request) {
   try {
@@ -46,9 +49,11 @@ export async function PATCH(request: Request) {
     const context = await authenticateService(request);
     const id = new URL(request.url).searchParams.get("id");
     if (!id || !z.string().min(1).max(100).safeParse(id).success) throw new ApiError("Invalid campaign id");
-    const input = activeSchema.safeParse(await readJson(request));
-    if (!input.success) throw new ApiError("Only isActive can be changed");
-    const data = await setCampaignActive(context, id, input.data.isActive);
+    const input = patchSchema.safeParse(await readJson(request));
+    if (!input.success) throw new ApiError("Only isActive or destinationUrl can be changed");
+    const data = "isActive" in input.data
+      ? await setCampaignActive(context, id, input.data.isActive)
+      : await setCampaignLink(context, id, input.data.destinationUrl);
     return Response.json({ data }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return apiError(error); }
 }

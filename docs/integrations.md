@@ -60,6 +60,8 @@ GET /api/v1/campaigns?id=<campaign-id>
 GET /api/v1/campaigns?id=<campaign-id>&stats=1
 GET /api/v1/campaigns?id=<campaign-id>&stats=1&since=<ISO date>
 GET /api/v1/campaigns?id=<campaign-id>&logs=1
+GET /api/v1/leads?after=<cursor>&limit=<n>
+GET /api/v1/leads/clicks?since=<ISO date>
 GET /api/v1/key
 ```
 
@@ -69,6 +71,18 @@ per table for the whole page. `stats` accepts `since` to count only sends and
 clicks created from that moment. `logs` (scope `logs:read`) returns the last 50
 sends of one campaign: `id`, `commenterName`, `commentText`, `status`,
 `errorMessage` (first 200 characters), `createdAt` and `dmSentAt`; no recipient ids.
+
+`leads` (scope `logs:read`) pages through every `SENT` DM of the workspace from
+comments and from the keyword sent by direct message (button-tap reveals are left
+out), oldest first by `(dmSentAt, id)`: `id`, `campaignId`, `campaignName`,
+`commenterId`, `commenterName`, `commentText` (first 500 characters), `origin`
+(`comentario` or `direct`), `sentAt` and `clicked` (a `LinkClick` of the same
+campaign carries `hashRecipientId(commenterId)`). `limit` defaults to 200, max
+500; `after` is the opaque `nextCursor` of the previous page (exclusive). The
+response is `{ data: { items, nextCursor, serverTime } }`, `nextCursor` null on the
+last page. `leads/clicks` returns `{ items: [{ campaignId, commenterId }], serverTime }`
+for link clicks created after `since`, so a client can update `clicked` of older
+sends. Rotating `NEXTAUTH_SECRET` changes the recipient hash and unlinks old clicks.
 
 `GET /api/v1/key` returns the calling key's own `name`, `scopes` and `expiresAt`
 (any valid key, no scope required), so a client can warn before the key expires.
@@ -130,5 +144,7 @@ The comment sweep also answers matching comments made before the campaign existe
 within `COMMENT_POLL_LOOKBACK_HOURS`.
 
 `PATCH /api/v1/campaigns?id=<campaign-id>` with exactly `{ "isActive": true | false }`
-pauses or resumes a campaign of the key's workspace (`campaigns:write`); any other
-field is rejected with 400, and a foreign campaign returns 404.
+pauses or resumes a campaign of the key's workspace (`campaigns:write`). With
+exactly `{ "destinationUrl": "https://..." }` it points the campaign's main DM link
+(first by `TRACKED_LINK_ORDER`) to a new https address; links already sent follow
+it. Any other body is rejected with 400, and a foreign campaign returns 404.
